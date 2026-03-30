@@ -1,4 +1,4 @@
-import { generateRivalAnalysis } from '@/lib/claude';
+import { generateRivalAnalysis } from '@/lib/groq';
 import { fetchLeaderboard, fetchProgress } from '@/lib/newton';
 
 export const dynamic = 'force-dynamic';

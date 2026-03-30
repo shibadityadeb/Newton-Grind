@@ -1,5 +1,5 @@
 import { fetchMissedLectures, fetchProgress } from '@/lib/newton';
-import { generateStudyPlan, type StudyPlanResult } from '@/lib/claude';
+import { generateStudyPlan, type StudyPlanResult } from '@/lib/groq';
 import cache from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';

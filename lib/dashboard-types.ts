@@ -1,10 +1,18 @@
 import type {
+  BatchPulseResult,
+  BurnoutDetectorResult,
+  ComebackModeResult,
   DailyBriefingResult,
   EndRankPrediction,
+  InterviewReadinessResult,
   MomentumScoreResult,
+  PlacementSimulatorResult,
   RivalAnalysisResult,
   StudyPlanResult,
-} from "@/lib/claude";
+  StudyTwinResult,
+  VoiceBriefResult,
+  WeeklyWarReportResult,
+} from "@/lib/groq";
 import type { Assignments, Leaderboard, MissedLectures, Problem, Progress, QOTD, Schedule } from "@/lib/newton";
 
 export interface DashboardResponse {
@@ -21,5 +29,13 @@ export interface DashboardResponse {
     rival: RivalAnalysisResult;
     endRank: EndRankPrediction;
     momentum: MomentumScoreResult;
+    burnout: BurnoutDetectorResult;
+    interviewReadiness: InterviewReadinessResult;
+    batchPulse: BatchPulseResult;
+    studyTwins: StudyTwinResult;
+    placement: PlacementSimulatorResult;
+    comebackMode: ComebackModeResult;
+    weeklyReport: WeeklyWarReportResult;
+    voiceBrief: VoiceBriefResult;
   };
 }

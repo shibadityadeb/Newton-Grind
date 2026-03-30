@@ -1,7 +1,7 @@
 "use client";
 
 import { Space_Mono, Syne } from "next/font/google";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -89,11 +89,38 @@ export default function Home() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<"idle" | "speaking" | "done">("idle");
+  const autoVoiceDateRef = useRef<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const playVoiceBrief = useCallback((text: string) => {
+    if (typeof window === "undefined" || !dashboard) return;
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.onstart = () => setVoiceStatus("speaking");
+    utterance.onend = () => setVoiceStatus("done");
+    utterance.onerror = () => setVoiceStatus("idle");
+    window.speechSynthesis.speak(utterance);
+  }, [dashboard]);
+
+  useEffect(() => {
+    if (!dashboard) return;
+    const shouldAuto = dashboard.insights.voiceBrief.shouldAutoPlayAt8am;
+    if (!shouldAuto) return;
+    if (now.getHours() !== 8) return;
+
+    const dateKey = now.toISOString().slice(0, 10);
+    if (autoVoiceDateRef.current === dateKey) return;
+    autoVoiceDateRef.current = dateKey;
+    playVoiceBrief(dashboard.insights.voiceBrief.text);
+  }, [dashboard, now, playVoiceBrief]);
 
   useEffect(() => {
     let mounted = true;
@@ -296,6 +323,22 @@ export default function Home() {
       y += wrapped.length * 13 + 3;
     });
 
+    y += 10;
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("AI Insight Snapshot", left, y);
+    y += 18;
+    pdf.setFont("helvetica", "normal");
+    pdf.text(
+      pdf.splitTextToSize(`Interview readiness: ${dashboard.insights.interviewReadiness.score}/100`, 500),
+      left,
+      y,
+    );
+    y += 16;
+    pdf.text(pdf.splitTextToSize(`Burnout risk: ${dashboard.insights.burnout.risk}`, 500), left, y);
+    y += 16;
+    pdf.text(pdf.splitTextToSize(`Weekly insight: ${dashboard.insights.weeklyReport.aiInsight}`, 500), left, y);
+
     pdf.save(`${studentName.replace(/\s+/g, "-").toLowerCase()}-progress-card.pdf`);
   };
 
@@ -390,6 +433,50 @@ export default function Home() {
                 <p className="mt-1 text-sm font-bold text-[#f59e0b]">{qotdStreak}</p>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <h3 className={`${syne.className} text-lg font-bold text-white`}>Burnout Detector</h3>
+            <p className="mt-2 text-sm text-[#7f92b8]">
+              Trend flag:{" "}
+              <span
+                className={`font-bold ${
+                  dashboard.insights.burnout.risk === "high"
+                    ? "text-[#f43f5e]"
+                    : dashboard.insights.burnout.risk === "moderate"
+                      ? "text-[#f59e0b]"
+                      : "text-[#00d4aa]"
+                }`}
+              >
+                {dashboard.insights.burnout.risk.toUpperCase()}
+              </span>{" "}
+              • slipping for {dashboard.insights.burnout.slippingDays} day(s)
+            </p>
+            <ul className="mt-3 space-y-2 text-sm text-[#c3d0ea]">
+              {dashboard.insights.burnout.why.slice(0, 3).map((line, idx) => (
+                <li key={`${line}-${idx}`} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-2">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <h3 className={`${syne.className} text-lg font-bold text-white`}>Interview Readiness</h3>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                <p className="text-xs uppercase text-[#7f92b8]">FAANG-style Score</p>
+                <p className="mt-1 text-2xl font-bold text-[#00d4aa]">{dashboard.insights.interviewReadiness.score}/100</p>
+              </div>
+              <div className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                <p className="text-xs uppercase text-[#7f92b8]">Verdict</p>
+                <p className="mt-1 text-sm font-semibold text-white">{dashboard.insights.interviewReadiness.verdict}</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-[#7f92b8]">Focus today:</p>
+            <p className="mt-1 text-sm text-[#c3d0ea]">{dashboard.insights.interviewReadiness.focus.slice(0, 2).join(" • ")}</p>
           </div>
         </section>
 
@@ -583,6 +670,80 @@ export default function Home() {
                 ))}
               </ul>
             </div>
+          </div>
+        </section>
+
+        <section className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4 xl:col-span-2">
+            <h3 className={`${syne.className} text-lg font-bold text-white`}>Batch Pulse (Anonymous)</h3>
+            <p className="mt-1 text-sm text-[#7f92b8]">{dashboard.insights.batchPulse.headline}</p>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {dashboard.insights.batchPulse.heatmap.map((item, idx) => (
+                <div key={`${item.topic}-${idx}`} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                  <p className="text-xs uppercase text-[#7f92b8]">{item.topic}</p>
+                  <p className="mt-1 text-xl font-bold text-white">{item.intensity}%</p>
+                  <p
+                    className={`mt-1 text-xs ${
+                      item.status === "weak" ? "text-[#f43f5e]" : item.status === "watch" ? "text-[#f59e0b]" : "text-[#00d4aa]"
+                    }`}
+                  >
+                    {item.status}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <h3 className={`${syne.className} text-lg font-bold text-white`}>Voice Morning Brief</h3>
+            <p className="mt-2 text-sm text-[#9eb0d2]">{dashboard.insights.voiceBrief.text}</p>
+            <button
+              onClick={() => playVoiceBrief(dashboard.insights.voiceBrief.text)}
+              className="mt-3 rounded-md border border-[#00d4aa]/60 px-3 py-2 text-sm font-semibold text-[#00d4aa] hover:bg-[#00d4aa]/10"
+            >
+              {voiceStatus === "speaking" ? "Speaking..." : voiceStatus === "done" ? "Replay Brief" : "Play Brief"}
+            </button>
+          </div>
+
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <h3 className={`${syne.className} text-lg font-bold text-white`}>Study Twin Finder</h3>
+            <ul className="mt-3 space-y-2">
+              {dashboard.insights.studyTwins.matches.slice(0, 3).map((match, idx) => (
+                <li key={`${match.name}-${idx}`} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                  <p className="text-sm font-bold text-white">
+                    {match.name} <span className="text-[#00d4aa]">({match.compatibility}%)</span>
+                  </p>
+                  <p className="mt-1 text-xs text-[#9eb0d2]">
+                    Gap: {match.yourGap} • Strength: {match.theirStrength}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <h3 className={`${syne.className} text-lg font-bold text-white`}>Placement Simulator</h3>
+            <p className="mt-1 text-sm text-[#7f92b8]">Target: {dashboard.insights.placement.company}</p>
+            <p className="mt-2 text-3xl font-bold text-[#00d4aa]">{dashboard.insights.placement.readiness}/100</p>
+            <p className="mt-2 text-sm text-[#c3d0ea]">{dashboard.insights.placement.summary}</p>
+          </div>
+
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <h3 className={`${syne.className} text-lg font-bold text-white`}>Comeback Mode</h3>
+            <p
+              className={`mt-2 text-sm font-semibold ${
+                dashboard.insights.comebackMode.active ? "text-[#f43f5e]" : "text-[#00d4aa]"
+              }`}
+            >
+              {dashboard.insights.comebackMode.active ? "ACTIVE" : "STABLE"}
+            </p>
+            <p className="mt-1 text-sm text-[#9eb0d2]">{dashboard.insights.comebackMode.trigger}</p>
+          </div>
+
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <h3 className={`${syne.className} text-lg font-bold text-white`}>Weekly War Report</h3>
+            <p className="mt-1 text-sm text-[#7f92b8]">{dashboard.insights.weeklyReport.weekLabel}</p>
+            <p className="mt-2 text-sm text-[#c3d0ea]">{dashboard.insights.weeklyReport.aiInsight}</p>
           </div>
         </section>
 

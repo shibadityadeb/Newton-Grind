@@ -1,5 +1,5 @@
 import { fetchAssignments, fetchProgress, fetchQOTD, fetchSchedule } from '@/lib/newton';
-import { generateDailyBriefing, type DailyBriefingResult } from '@/lib/claude';
+import { generateDailyBriefing, type DailyBriefingResult } from '@/lib/groq';
 import cache from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';

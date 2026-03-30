@@ -1,4 +1,4 @@
-import { calculateMomentumScore } from '@/lib/claude';
+import { calculateMomentumScore } from '@/lib/groq';
 import type { Progress } from '@/lib/newton';
 import { fetchProgress, fetchQOTD } from '@/lib/newton';
 

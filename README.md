@@ -12,12 +12,12 @@ Newton Grind is your all-in-one AI-powered dashboard for Newton School students.
 ## Architecture Diagram
 - **Next.js App Router** (UI, API routes)
 - **Newton MCP Data Layer** (calls MCP server via JSON-RPC)
-- **Claude AI Engine** (insights, plans, rival analysis)
+- **Groq LLM Engine** (insights, plans, rival analysis)
 - **In-memory Cache** (fast, low-latency data)
 - **Vercel Hosting** (serverless, edge-ready)
 
 ```
-[User] ⇄ [Next.js UI] ⇄ [API Routes] ⇄ [Newton MCP] ⇄ [Claude AI]
+[User] ⇄ [Next.js UI] ⇄ [API Routes] ⇄ [Newton MCP] ⇄ [Groq LLM]
 ```
 
 ---
@@ -27,7 +27,7 @@ Newton Grind is your all-in-one AI-powered dashboard for Newton School students.
 ![Next.js](https://img.shields.io/badge/Next.js-000?logo=nextdotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?logo=typescript&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-000?logo=vercel&logoColor=white)
-![Anthropic Claude](https://img.shields.io/badge/Claude%20AI-fff?logo=anthropic&logoColor=black)
+![Groq](https://img.shields.io/badge/Groq%20LLM-f55036?logoColor=white)
 ![Newton MCP](https://img.shields.io/badge/Newton%20MCP-0a0?logo=data&logoColor=white)
 
 ---
@@ -54,7 +54,12 @@ Newton Grind is your all-in-one AI-powered dashboard for Newton School students.
 	```bash
 	npm run dev
 	```
-4. **Open** [http://localhost:3000/demo](http://localhost:3000/demo) **for a public demo**
+4. **Set environment variables (`.env` or `.env.local`):**
+	```bash
+	GROQ_API_KEY=your_key_here
+	GROQ_MODEL_NAME=llama-3.3-70b-versatile
+	```
+5. **Open** [http://localhost:3000/demo](http://localhost:3000/demo) **for a public demo**
 
 ---
 
