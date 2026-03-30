@@ -1,11 +1,10 @@
 # Newton Grind
 
-![Newton Grind Demo](demo.gif)
-
----
-
 ## What is Newton Grind?
-Newton Grind is your all-in-one AI-powered dashboard for Newton School students. It brings together your schedule, assignments, progress, and competitive stats, then uses advanced AI to generate actionable insights, study plans, and viral shareable cards. Built to help you win the leaderboard—and show recruiters your edge.
+Newton Grind is an AI-powered student dashboard built for Newton School learners. It pulls together schedule, assignments, attendance, XP, leaderboard context, and performance data into one place, then turns that data into daily action with AI briefings, study plans, momentum tracking, and shareable progress cards.
+
+## Demo Recording
+[Watch the product walkthrough](assets/recording.mp4)
 
 ---
 
@@ -38,6 +37,7 @@ Newton Grind is your all-in-one AI-powered dashboard for Newton School students.
 - **Rival Analysis:** See who's just above you and get a daily challenge to beat them
 - **Momentum Score:** Composite 0–100 score with breakdown
 - **End Rank Prediction:** Predicts your final batch rank with confidence
+- **Share Card:** Generate a downloadable card for sharing stats and progress
 
 ---
 
@@ -64,13 +64,14 @@ Newton Grind is your all-in-one AI-powered dashboard for Newton School students.
 ---
 
 ## Why I built this
-I wanted to create a dashboard that not only tracks your Newton School journey, but also motivates you to push harder, compete smarter, and share your wins. With AI-powered insights and viral share cards, Newton Grind helps you stand out to recruiters and your peers.
+I wanted to build something that feels more useful than a plain student portal. Newton Grind helps students quickly understand where they stand, what they should do next, and how to stay motivated with AI-generated guidance and visible progress.
 
 ---
 
 ## Recruiter Demo
 - See `/demo` for a full-featured, no-login preview.
 - Try the "Share my stats" button to generate a LinkedIn-ready card.
+- Use the recording in [`assets/recording.mp4`](/Users/shibadityadeb/Desktop/Newton-Grind/assets/recording.mp4) for a quick walkthrough.
 
 ---
 
