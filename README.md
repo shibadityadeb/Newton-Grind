@@ -4,7 +4,7 @@
 Newton Grind is an AI-powered student dashboard built for Newton School learners. It pulls together schedule, assignments, attendance, XP, leaderboard context, and performance data into one place, then turns that data into daily action with AI briefings, study plans, momentum tracking, and shareable progress cards.
 
 ## Demo Recording
-[Watch the product walkthrough](assets/recording.mp4)
+[Watch the product walkthrough](https://drive.google.com/file/d/1V5OyRtNn2UOMRpLxg2D-90z8a_qae1IN/view?usp=sharing)
 
 ---
 
