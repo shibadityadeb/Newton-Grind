@@ -1,11 +1,8 @@
 "use client";
 
-import { Space_Mono, Syne } from "next/font/google";
-import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-
-// Dynamically import ShareCard to avoid SSR issues with html2canvas
-const ShareCard = dynamic(() => import("@/components/ShareCard"), { ssr: false });
+import { Space_Mono, Syne } from "next/font/google";
+import { useEffect, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -16,6 +13,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import type { DashboardResponse } from "@/lib/dashboard-types";
+
+const ShareCard = dynamic(() => import("@/components/ShareCard"), { ssr: false });
 
 const spaceMono = Space_Mono({
   subsets: ["latin"],
@@ -27,99 +27,21 @@ const syne = Syne({
   weight: ["500", "700", "800"],
 });
 
-const student = {
-  name: "Shiba D.",
-  batch: "JEE 2027 Alpha",
-  rank: "Lieutenant",
-  momentum: 84,
-  qotdStreak: 19,
-};
-
-const missionItems = [
-  { text: "Finish Electrostatics PYQ set (30Q)", priority: "HIGH" },
-  { text: "Revise Organic mechanisms notebook", priority: "MED" },
-  { text: "Attempt timed Algebra ladder challenge", priority: "HIGH" },
-];
-
-const trajectoryData = [
-  { checkpoint: "W1", rank: 982, predicted: 982 },
-  { checkpoint: "W2", rank: 910, predicted: 905 },
-  { checkpoint: "W3", rank: 856, predicted: 840 },
-  { checkpoint: "W4", rank: 802, predicted: 780 },
-  { checkpoint: "W5", rank: 748, predicted: 725 },
-  { checkpoint: "W6", rank: null, predicted: 668 },
-  { checkpoint: "W7", rank: null, predicted: 610 },
-];
-
-const assignments = [
-  { title: "Physics Mock Analysis", dueIn: "2h 15m", urgency: "urgent" },
-  { title: "Inorganic NCERT Drill", dueIn: "Today 11:45 PM", urgency: "warn" },
-  { title: "Calculus Revision Sheet", dueIn: "Tomorrow 9:00 AM", urgency: "normal" },
-];
-
-const missedLectures = [
-  { topic: "Capacitance Masterclass", link: "#" },
-  { topic: "Complex Numbers Shortcuts", link: "#" },
-];
-
-const arenaRecommendations = [
-  { title: "JEE Adv: Rotational Dynamics 15Q Sprint", level: "Level: Tactical 7" },
-  { title: "Coordinate Geometry Trap Set", level: "Level: Tactical 6" },
-  { title: "Modern Physics Mixed Bag", level: "Level: Tactical 7" },
-];
-
-const studyPlan = [
-  {
-    day: "Day 1",
-    title: "Kinematics + Trigonometry Core",
-    detail: "2 focused blocks on vector breakdown + 1 speed drill. End with 20-minute error-log review.",
-  },
-  {
-    day: "Day 2",
-    title: "Chemical Bonding + Mole Concept",
-    detail: "Active recall pass in the morning, numericals in the evening. Revisit weak ionization questions.",
-  },
-  {
-    day: "Day 3",
-    title: "Quadratic + Sequence/Series",
-    detail: "Solve in mixed mode under timer. Tag all mistakes by pattern, not by chapter.",
-  },
-  {
-    day: "Day 4",
-    title: "Current Electricity + Thermodynamics",
-    detail: "Practice derivation-first, then apply in 25Q timed set to improve transition speed.",
-  },
-  {
-    day: "Day 5",
-    title: "Full-Length Simulation + Debrief",
-    detail: "Three-hour paper in exam conditions. Post-paper debrief on misses, guesswork, and pacing.",
-  },
-];
-
-const classSlots = ["08:00", "12:30", "17:30"];
-
-function getNextClass(now: Date) {
-  const slots = classSlots
-    .map((slot) => {
-      const [h, m] = slot.split(":").map(Number);
-      const date = new Date(now);
-      date.setHours(h, m, 0, 0);
-      return date;
-    })
-    .filter((date) => date.getTime() > now.getTime());
-
-  if (slots.length) {
-    return slots[0];
-  }
-
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  const [h, m] = classSlots[0].split(":").map(Number);
-  tomorrow.setHours(h, m, 0, 0);
-  return tomorrow;
+function getPriority(index: number): "HIGH" | "MED" {
+  return index === 0 || index === 2 ? "HIGH" : "MED";
 }
 
-function formatCountdown(ms: number) {
+async function fetchJson<T>(url: string): Promise<T> {
+  console.log(`[ui] fetching ${url}`);
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`${url} failed with ${response.status}: ${message}`);
+  }
+  return (await response.json()) as T;
+}
+
+function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const hrs = Math.floor(total / 3600)
     .toString()
@@ -131,18 +53,135 @@ function formatCountdown(ms: number) {
   return `${hrs}:${mins}:${secs}`;
 }
 
+function formatDeadline(iso: string): string {
+  const due = new Date(iso);
+  const ms = due.getTime() - Date.now();
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.max(0, Math.floor((ms % 3600000) / 60000));
+  if (ms <= 0) return "Overdue";
+  if (hours < 1) return `${minutes}m`;
+  if (hours < 24) return `${hours}h ${minutes}m`;
+  return due.toLocaleString();
+}
+
+function urgencyForDeadline(iso: string): "urgent" | "warn" | "normal" {
+  const dueMs = new Date(iso).getTime() - Date.now();
+  if (dueMs <= 4 * 3600000) return "urgent";
+  if (dueMs <= 12 * 3600000) return "warn";
+  return "normal";
+}
+
+function computeTrajectory(currentRank: number, predictedRank: number) {
+  const start = currentRank + 280;
+  const mid = currentRank + 180;
+  return [
+    { checkpoint: "W1", rank: start, predicted: start },
+    { checkpoint: "W2", rank: start - 60, predicted: start - 75 },
+    { checkpoint: "W3", rank: start - 120, predicted: start - 145 },
+    { checkpoint: "W4", rank: mid, predicted: mid - 30 },
+    { checkpoint: "W5", rank: currentRank, predicted: Math.max(1, currentRank - 25) },
+    { checkpoint: "W6", rank: null, predicted: Math.max(1, predictedRank) },
+  ];
+}
+
 export default function Home() {
   const [now, setNow] = useState(() => new Date());
+  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const nextClass = useMemo(() => getNextClass(now), [now]);
-  const countdown = formatCountdown(nextClass.getTime() - now.getTime());
+  useEffect(() => {
+    let mounted = true;
+    async function loadData() {
+      console.log("[ui] dashboard load start");
+      const [dashboardRes, briefingRes, studyPlanRes, rivalRes, momentumRes] = await Promise.allSettled([
+        fetchJson<DashboardResponse>("/api/dashboard"),
+        fetchJson<DashboardResponse["insights"]["briefing"]>("/api/briefing"),
+        fetchJson<DashboardResponse["insights"]["studyPlan"]>("/api/study-plan"),
+        fetchJson<DashboardResponse["insights"]["rival"]>("/api/rival"),
+        fetchJson<DashboardResponse["insights"]["momentum"]>("/api/momentum"),
+      ]);
+
+      if (dashboardRes.status !== "fulfilled") {
+        throw dashboardRes.reason;
+      }
+
+      const base = dashboardRes.value;
+      const merged: DashboardResponse = {
+        ...base,
+        insights: {
+          briefing: briefingRes.status === "fulfilled" ? briefingRes.value : base.insights.briefing,
+          studyPlan: studyPlanRes.status === "fulfilled" ? studyPlanRes.value : base.insights.studyPlan,
+          rival: rivalRes.status === "fulfilled" ? rivalRes.value : base.insights.rival,
+          endRank: base.insights.endRank,
+          momentum: momentumRes.status === "fulfilled" ? momentumRes.value : base.insights.momentum,
+        },
+      };
+
+      if (!mounted) return;
+      setDashboard(merged);
+      console.log("[ui] dashboard load complete", {
+        assignments: merged.assignments.length,
+        missionItems: merged.insights.briefing.mission.length,
+        studyDays: merged.insights.studyPlan.plan.length,
+      });
+    }
+
+    loadData().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.log(`[ui] dashboard load failed. reason=${message}`);
+      if (mounted) setLoadError(message);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (loadError) {
+    return (
+      <div className={`${spaceMono.className} min-h-screen bg-[#0a0e1a] p-8 text-[#d7deed]`}>
+        <h1 className={`${syne.className} text-2xl font-bold text-[#f43f5e]`}>Dashboard Load Failed</h1>
+        <p className="mt-3 text-sm">{loadError}</p>
+      </div>
+    );
+  }
+
+  if (!dashboard) {
+    return (
+      <div className={`${spaceMono.className} min-h-screen bg-[#0a0e1a] p-8 text-[#d7deed]`}>
+        <h1 className={`${syne.className} text-2xl font-bold text-white`}>Loading War Room...</h1>
+      </div>
+    );
+  }
+
+  const studentName =
+    typeof dashboard.progress.name === "string"
+      ? dashboard.progress.name
+      : typeof dashboard.progress.user === "string"
+        ? dashboard.progress.user
+        : "Cadet";
+  const rankEntry = dashboard.leaderboard.overall.find((entry) => entry.name === studentName);
+  const rankNumber = rankEntry?.rank ?? dashboard.insights.endRank.predictedRank;
+  const momentum = dashboard.insights.momentum.score;
+  const qotdStreak = dashboard.qotd.streak ?? 0;
+
+  const nextClass = [...dashboard.schedule]
+    .map((slot) => ({ ...slot, startDate: new Date(slot.startTime) }))
+    .filter((slot) => slot.startDate.getTime() > now.getTime())
+    .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())[0];
+
+  const countdown = nextClass ? formatCountdown(nextClass.startDate.getTime() - now.getTime()) : "00:00:00";
+  const assignments = [...dashboard.assignments].sort(
+    (a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime(),
+  );
+  const trajectoryData = computeTrajectory(rankNumber, dashboard.insights.endRank.predictedRank);
   const momentumRingStyle = {
-    background: `conic-gradient(#00d4aa ${student.momentum * 3.6}deg, #1e2b43 0deg)`,
+    background: `conic-gradient(#00d4aa ${Math.min(Math.max(momentum, 0), 100) * 3.6}deg, #1e2b43 0deg)`,
   };
 
   return (
@@ -155,16 +194,17 @@ export default function Home() {
     >
       <main className="mx-auto w-full max-w-[1400px] px-4 py-5 sm:px-6 lg:px-8">
         <div className="mb-8 flex flex-col items-center">
-          <ShareCard rank={7} momentum={84} streak={19} />
+          <ShareCard rank={rankNumber} momentum={momentum} streak={qotdStreak} />
         </div>
+
         <section className="mb-5 grid gap-4 rounded-2xl border border-[#1c2a44] bg-[#0d1526]/90 p-4 shadow-[0_0_30px_rgba(0,0,0,0.45)] lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
           <div>
-            <p className={`${syne.className} text-xl font-extrabold text-white sm:text-2xl`}>{student.name}</p>
-            <p className="mt-1 text-xs tracking-[0.2em] text-[#7f92b8] uppercase">{student.batch}</p>
+            <p className={`${syne.className} text-xl font-extrabold text-white sm:text-2xl`}>{studentName}</p>
+            <p className="mt-1 text-xs tracking-[0.2em] text-[#7f92b8] uppercase">JEE 2027 Alpha</p>
           </div>
           <div className="flex items-center lg:justify-center">
             <span className="rounded-md border border-[#00d4aa]/50 bg-[#00d4aa]/15 px-3 py-1 text-xs font-bold tracking-[0.18em] text-[#00d4aa] uppercase">
-              Rank {student.rank}
+              Rank #{rankNumber}
             </span>
           </div>
           <div className="flex items-center gap-3 lg:justify-center">
@@ -173,7 +213,7 @@ export default function Home() {
               style={momentumRingStyle}
             >
               <div className="grid h-full w-full place-items-center rounded-full bg-[#0d1526] text-[11px] font-bold text-[#00d4aa]">
-                {student.momentum}
+                {momentum}
               </div>
             </div>
             <div>
@@ -195,28 +235,31 @@ export default function Home() {
               <h2 className={`${syne.className} text-lg font-bold text-white`}>Today&apos;s Mission</h2>
               <p className="mt-1 text-xs text-[#7f92b8]">AI BRIEFING: Execute in order for max rank gain.</p>
               <ul className="mt-4 space-y-3">
-                {missionItems.map((item) => (
-                  <li key={item.text} className="rounded-xl border border-[#233454] bg-[#0a1221] p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm leading-5 text-[#d7deed]">{item.text}</p>
-                      <span
-                        className={`rounded px-2 py-0.5 text-[10px] font-bold tracking-[0.15em] ${
-                          item.priority === "HIGH"
-                            ? "bg-[#f43f5e]/20 text-[#f43f5e]"
-                            : "bg-[#f59e0b]/20 text-[#f59e0b]"
-                        }`}
-                      >
-                        {item.priority}
-                      </span>
-                    </div>
-                  </li>
-                ))}
+                {dashboard.insights.briefing.mission.map((text, index) => {
+                  const priority = getPriority(index);
+                  return (
+                    <li key={`${text}-${index}`} className="rounded-xl border border-[#233454] bg-[#0a1221] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-sm leading-5 text-[#d7deed]">{text}</p>
+                        <span
+                          className={`rounded px-2 py-0.5 text-[10px] font-bold tracking-[0.15em] ${
+                            priority === "HIGH" ? "bg-[#f43f5e]/20 text-[#f43f5e]" : "bg-[#f59e0b]/20 text-[#f59e0b]"
+                          }`}
+                        >
+                          {priority}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
 
             <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
               <p className={`${syne.className} text-base font-bold text-white`}>Next Class Countdown</p>
-              <p className="mt-1 text-xs text-[#7f92b8]">Slot: {nextClass.toLocaleString()}</p>
+              <p className="mt-1 text-xs text-[#7f92b8]">
+                Slot: {nextClass ? `${nextClass.title} • ${nextClass.startDate.toLocaleString()}` : "No classes scheduled"}
+              </p>
               <p className="countdown mt-3 text-3xl font-bold tracking-[0.08em] text-[#00d4aa]">{countdown}</p>
             </div>
 
@@ -224,7 +267,7 @@ export default function Home() {
               <p className={`${syne.className} text-base font-bold text-white`}>QOTD Streak</p>
               <div className="mt-3 flex items-center gap-3">
                 <span className="flame-icon" />
-                <p className="text-2xl font-bold text-[#f59e0b]">{student.qotdStreak} days</p>
+                <p className="text-2xl font-bold text-[#f59e0b]">{qotdStreak} days</p>
               </div>
             </div>
           </div>
@@ -239,7 +282,7 @@ export default function Home() {
                     <CartesianGrid stroke="#243757" strokeDasharray="4 4" />
                     <XAxis dataKey="checkpoint" stroke="#8aa0c8" tick={{ fill: "#8aa0c8", fontSize: 12 }} />
                     <YAxis
-                      domain={["dataMin - 40", "dataMax + 40"]}
+                      domain={["dataMin - 30", "dataMax + 30"]}
                       reversed
                       stroke="#8aa0c8"
                       tick={{ fill: "#8aa0c8", fontSize: 12 }}
@@ -278,13 +321,13 @@ export default function Home() {
             <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
               <h3 className={`${syne.className} text-lg font-bold text-white`}>Rival Tracker</h3>
               <p className="mt-3 text-sm text-[#7f92b8]">
-                <span className="font-bold text-[#d7deed]">Rival:</span> Ananya K.
+                <span className="font-bold text-[#d7deed]">Rival:</span> {dashboard.insights.rival.rival}
               </p>
               <p className="mt-2 text-sm text-[#7f92b8]">
-                <span className="font-bold text-[#f59e0b]">Beating you in:</span> faster mock-paper review turnaround.
+                <span className="font-bold text-[#f59e0b]">Beating you in:</span> {dashboard.insights.rival.advantage}
               </p>
               <p className="mt-3 rounded-lg border border-[#00d4aa]/35 bg-[#00d4aa]/10 p-3 text-sm text-[#b7ffe8]">
-                Today&apos;s challenge: finish your mock debrief within 35 minutes and close every marked weak node.
+                Today&apos;s challenge: {dashboard.insights.rival.challenge}
               </p>
             </div>
           </div>
@@ -293,41 +336,44 @@ export default function Home() {
             <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
               <h3 className={`${syne.className} text-lg font-bold text-white`}>Assignments Due</h3>
               <ul className="mt-3 space-y-2">
-                {assignments.map((item) => (
-                  <li
-                    key={item.title}
-                    className={`rounded-lg border p-3 ${
-                      item.urgency === "urgent"
-                        ? "urgent-shake border-[#f43f5e]/60 bg-[#f43f5e]/10"
-                        : item.urgency === "warn"
-                          ? "border-[#f59e0b]/50 bg-[#f59e0b]/10"
-                          : "border-[#2d4369] bg-[#101a30]"
-                    }`}
-                  >
-                    <p className="text-sm font-bold text-white">{item.title}</p>
-                    <p
-                      className={`mt-1 text-xs ${
-                        item.urgency === "urgent"
-                          ? "text-[#f43f5e]"
-                          : item.urgency === "warn"
-                            ? "text-[#f59e0b]"
-                            : "text-[#7f92b8]"
+                {assignments.map((item) => {
+                  const urgency = urgencyForDeadline(item.deadline);
+                  return (
+                    <li
+                      key={item.id}
+                      className={`rounded-lg border p-3 ${
+                        urgency === "urgent"
+                          ? "urgent-shake border-[#f43f5e]/60 bg-[#f43f5e]/10"
+                          : urgency === "warn"
+                            ? "border-[#f59e0b]/50 bg-[#f59e0b]/10"
+                            : "border-[#2d4369] bg-[#101a30]"
                       }`}
                     >
-                      Due: {item.dueIn}
-                    </p>
-                  </li>
-                ))}
+                      <p className="text-sm font-bold text-white">{item.title}</p>
+                      <p
+                        className={`mt-1 text-xs ${
+                          urgency === "urgent"
+                            ? "text-[#f43f5e]"
+                            : urgency === "warn"
+                              ? "text-[#f59e0b]"
+                              : "text-[#7f92b8]"
+                        }`}
+                      >
+                        Due: {formatDeadline(item.deadline)}
+                      </p>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
 
             <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
               <h3 className={`${syne.className} text-lg font-bold text-white`}>Missed Lectures</h3>
               <ul className="mt-3 space-y-2">
-                {missedLectures.map((item) => (
-                  <li key={item.topic} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
-                    <p className="text-sm text-white">{item.topic}</p>
-                    <a href={item.link} className="mt-1 inline-block text-xs text-[#00d4aa] underline">
+                {dashboard.missedLectures.map((item) => (
+                  <li key={item.id} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                    <p className="text-sm text-white">{item.title}</p>
+                    <a href={`/recordings/${item.id}`} className="mt-1 inline-block text-xs text-[#00d4aa] underline">
                       Watch recording
                     </a>
                   </li>
@@ -338,10 +384,12 @@ export default function Home() {
             <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
               <h3 className={`${syne.className} text-lg font-bold text-white`}>Arena Recommendations</h3>
               <ul className="mt-3 space-y-2">
-                {arenaRecommendations.map((item) => (
-                  <li key={item.title} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                {dashboard.arenaRecommendations.slice(0, 3).map((item) => (
+                  <li key={item.id} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
                     <p className="text-sm text-white">{item.title}</p>
-                    <p className="mt-1 text-xs text-[#7f92b8]">{item.level}</p>
+                    <p className="mt-1 text-xs text-[#7f92b8]">
+                      {item.topic} • {item.difficulty}
+                    </p>
                   </li>
                 ))}
               </ul>
@@ -353,14 +401,16 @@ export default function Home() {
           <h3 className={`${syne.className} text-lg font-bold text-white`}>5-Day Study Plan</h3>
           <p className="mt-1 text-xs text-[#7f92b8]">AI-generated and adaptable after every mock test.</p>
           <div className="mt-3 space-y-2">
-            {studyPlan.map((item) => (
+            {dashboard.insights.studyPlan.plan.map((item) => (
               <details key={item.day} className="group rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
                 <summary className="cursor-pointer list-none text-sm font-bold text-[#d7deed]">
-                  {item.day}: {item.title}
+                  Day {item.day}: {item.focus}
                   <span className="ml-2 text-[#00d4aa] group-open:hidden">[expand]</span>
                   <span className="ml-2 hidden text-[#00d4aa] group-open:inline">[collapse]</span>
                 </summary>
-                <p className="mt-2 text-sm leading-6 text-[#9eb0d2]">{item.detail}</p>
+                <p className="mt-2 text-sm leading-6 text-[#9eb0d2]">
+                  Arena set: {item.arenaProblems.join(", ")}
+                </p>
               </details>
             ))}
           </div>

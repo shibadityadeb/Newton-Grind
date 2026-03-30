@@ -1,24 +1,28 @@
-import { NextRequest } from 'next/server';
-import { fetchLeaderboard, fetchProgress } from '@/lib/newton';
 import { generateRivalAnalysis } from '@/lib/claude';
+import { fetchLeaderboard, fetchProgress } from '@/lib/newton';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const [leaderboard, progress] = await Promise.all([
-      fetchLeaderboard(),
-      fetchProgress(),
-    ]);
-    // Find my rank (assume user is in leaderboard.overall, match by name or id if available)
-    const myName = progress?.name || progress?.user || '';
-    const overall = leaderboard?.overall || [];
-    let myRank = overall.findIndex((x: any) => x.name === myName);
-    if (myRank === -1) myRank = 0;
-    const myStats = progress;
-    const rival = await generateRivalAnalysis({ leaderboard, myRank, myStats });
+    console.log('[api/rival] request start');
+    const [leaderboard, progress] = await Promise.all([fetchLeaderboard(), fetchProgress()]);
+
+    const myName = typeof progress.name === 'string' ? progress.name : typeof progress.user === 'string' ? progress.user : '';
+    const overall = leaderboard.overall || [];
+    let myRankIndex = overall.findIndex((entry) => entry.name === myName);
+    if (myRankIndex === -1) myRankIndex = 0;
+
+    const rival = await generateRivalAnalysis({
+      leaderboard,
+      myRank: myRankIndex,
+      myStats: progress,
+    });
+    console.log('[api/rival] success', rival);
     return Response.json(rival);
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || 'Internal error' }), { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal error';
+    console.log(`[api/rival] error=${message}`);
+    return Response.json({ error: message }, { status: 500 });
   }
 }

@@ -1,35 +1,37 @@
-import { NextRequest } from 'next/server';
-import { fetchProgress, fetchQOTD } from '@/lib/newton';
 import { calculateMomentumScore } from '@/lib/claude';
+import type { Progress } from '@/lib/newton';
+import { fetchProgress, fetchQOTD } from '@/lib/newton';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const [progress, qotd] = await Promise.all([
-      fetchProgress(),
-      fetchQOTD(),
-    ]);
+    console.log('[api/momentum] request start');
+    const [progress, qotd] = await Promise.all([fetchProgress(), fetchQOTD()]);
+
     const score = await calculateMomentumScore({
-      attendance: progress?.attendance ?? 0,
-      qotdStreak: qotd?.streak ?? 0,
+      attendance: progress.attendance ?? 0,
+      qotdStreak: qotd.streak ?? 0,
       assignmentRate: calcAssignmentRate(progress),
       assessmentAvg: calcAssessmentAvg(progress),
     });
+    console.log('[api/momentum] success', score);
     return Response.json(score);
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || 'Internal error' }), { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal error';
+    console.log(`[api/momentum] error=${message}`);
+    return Response.json({ error: message }, { status: 500 });
   }
 }
 
-function calcAssignmentRate(progress: any): number {
-  if (!progress?.assignmentCompletion) return 0;
-  const vals = Object.values(progress.assignmentCompletion);
-  return vals.length ? vals.filter(Boolean).length / vals.length : 0;
+function calcAssignmentRate(progress: Progress): number {
+  const values = Object.values(progress.assignmentCompletion || {});
+  if (!values.length) return 0;
+  return values.filter(Boolean).length / values.length;
 }
 
-function calcAssessmentAvg(progress: any): number {
-  if (!progress?.assessmentScores) return 0;
-  const vals = Object.values(progress.assessmentScores);
-  return vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
+function calcAssessmentAvg(progress: Progress): number {
+  const values = Object.values(progress.assessmentScores || {});
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }

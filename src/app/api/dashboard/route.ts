@@ -1,41 +1,69 @@
-import { NextRequest } from 'next/server';
-import { fetchSchedule, fetchProgress, fetchAssignments, fetchQOTD, fetchLeaderboard } from '@/lib/newton';
-import { generateDailyBriefing, generateStudyPlan, generateRivalAnalysis, predictEndRank, calculateMomentumScore } from '@/lib/claude';
+import {
+  calculateMomentumScore,
+  generateDailyBriefing,
+  generateRivalAnalysis,
+  generateStudyPlan,
+  predictEndRank,
+} from '@/lib/claude';
 import cache from '@/lib/cache';
+import type { DashboardResponse } from '@/lib/dashboard-types';
+import type { Progress } from '@/lib/newton';
+import {
+  fetchAssignments,
+  fetchLeaderboard,
+  fetchMissedLectures,
+  fetchProgress,
+  fetchQOTD,
+  fetchSchedule,
+  searchProblems,
+} from '@/lib/newton';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    // Parallel fetch Newton MCP data with 15-min cache
-    const [schedule, progress, assignments, qotd, leaderboard] = await Promise.all([
+    console.log('[api/dashboard] request start');
+    const cacheKey = 'dashboard';
+    const cached = cache.get<DashboardResponse>(cacheKey);
+    if (cached) {
+      console.log('[api/dashboard] cache hit');
+      return Response.json(cached);
+    }
+
+    const [schedule, progress, assignments, qotd, leaderboard, missedLectures, arenaRecommendations] = await Promise.all([
       getCached('schedule', fetchSchedule, 900),
       getCached('progress', fetchProgress, 900),
       getCached('assignments', fetchAssignments, 900),
       getCached('qotd', fetchQOTD, 900),
       getCached('leaderboard', fetchLeaderboard, 900),
+      getCached('missedLectures', fetchMissedLectures, 900),
+      getCached('arenaRecommendations', () => searchProblems({ difficulty: 'medium' }), 900),
     ]);
 
-    // Run all Claude functions concurrently
+    const myName = typeof progress.name === 'string' ? progress.name : typeof progress.user === 'string' ? progress.user : '';
+    const myRankIndex = Math.max(0, leaderboard.overall.findIndex((entry) => entry.name === myName));
+
     const [briefing, studyPlan, rival, endRank, momentum] = await Promise.all([
       generateDailyBriefing({ schedule, assignments, qotd, progress }),
-      generateStudyPlan({ progress, missedLectures: [], weakTopics: [] }), // TODO: fill missedLectures/weakTopics if needed
-      generateRivalAnalysis({ leaderboard, myRank: 0, myStats: progress }), // TODO: fill myRank/myStats
-      predictEndRank({ progress, currentRank: 0, batchSize: leaderboard?.overall?.length || 0 }), // TODO: fill currentRank
+      generateStudyPlan({ progress, missedLectures, weakTopics: inferWeakTopics(progress) }),
+      generateRivalAnalysis({ leaderboard, myRank: myRankIndex, myStats: progress }),
+      predictEndRank({ progress, currentRank: myRankIndex + 1, batchSize: leaderboard.overall.length }),
       calculateMomentumScore({
-        attendance: progress?.attendance ?? 0,
-        qotdStreak: qotd?.streak ?? 0,
+        attendance: progress.attendance ?? 0,
+        qotdStreak: qotd.streak ?? 0,
         assignmentRate: calcAssignmentRate(progress),
         assessmentAvg: calcAssessmentAvg(progress),
       }),
     ]);
 
-    return Response.json({
+    const payload: DashboardResponse = {
       schedule,
       progress,
       assignments,
       qotd,
       leaderboard,
+      missedLectures,
+      arenaRecommendations,
       insights: {
         briefing,
         studyPlan,
@@ -43,9 +71,23 @@ export async function GET(req: NextRequest) {
         endRank,
         momentum,
       },
+    };
+
+    cache.set(cacheKey, payload, 300);
+    console.log('[api/dashboard] success', {
+      schedule: schedule.length,
+      assignments: assignments.length,
+      missedLectures: missedLectures.length,
+      arenaRecommendations: arenaRecommendations.length,
+      missionItems: briefing.mission.length,
+      planDays: studyPlan.plan.length,
     });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || 'Internal error' }), { status: 500 });
+
+    return Response.json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal error';
+    console.log(`[api/dashboard] error=${message}`);
+    return Response.json({ error: message }, { status: 500 });
   }
 }
 
@@ -57,14 +99,20 @@ async function getCached<T>(key: string, fn: () => Promise<T>, ttl: number): Pro
   return value;
 }
 
-function calcAssignmentRate(progress: any): number {
-  if (!progress?.assignmentCompletion) return 0;
-  const vals = Object.values(progress.assignmentCompletion);
-  return vals.length ? vals.filter(Boolean).length / vals.length : 0;
+function inferWeakTopics(progress: Progress): string[] {
+  return Object.entries(progress.assessmentScores || {})
+    .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] < 60)
+    .map(([topic]) => topic);
 }
 
-function calcAssessmentAvg(progress: any): number {
-  if (!progress?.assessmentScores) return 0;
-  const vals = Object.values(progress.assessmentScores);
-  return vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
+function calcAssignmentRate(progress: Progress): number {
+  const values = Object.values(progress.assignmentCompletion || {});
+  if (!values.length) return 0;
+  return values.filter(Boolean).length / values.length;
+}
+
+function calcAssessmentAvg(progress: Progress): number {
+  const values = Object.values(progress.assessmentScores || {});
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }

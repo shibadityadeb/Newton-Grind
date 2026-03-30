@@ -1,15 +1,18 @@
-import { NextRequest } from 'next/server';
-import { fetchSchedule, fetchAssignments, fetchQOTD, fetchProgress } from '@/lib/newton';
-import { generateDailyBriefing } from '@/lib/claude';
+import { fetchAssignments, fetchProgress, fetchQOTD, fetchSchedule } from '@/lib/newton';
+import { generateDailyBriefing, type DailyBriefingResult } from '@/lib/claude';
 import cache from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
+    console.log('[api/briefing] request start');
     const cacheKey = 'briefing';
-    const cached = cache.get<any>(cacheKey);
-    if (cached) return Response.json(cached);
+    const cached = cache.get<DailyBriefingResult>(cacheKey);
+    if (cached) {
+      console.log('[api/briefing] cache hit');
+      return Response.json(cached);
+    }
 
     const [schedule, assignments, qotd, progress] = await Promise.all([
       getCached('schedule', fetchSchedule, 900),
@@ -17,11 +20,15 @@ export async function GET(req: NextRequest) {
       getCached('qotd', fetchQOTD, 900),
       getCached('progress', fetchProgress, 900),
     ]);
+
     const briefing = await generateDailyBriefing({ schedule, assignments, qotd, progress });
-    cache.set(cacheKey, briefing, 3600); // 1 hour
+    cache.set(cacheKey, briefing, 3600);
+    console.log('[api/briefing] success', briefing);
     return Response.json(briefing);
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || 'Internal error' }), { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal error';
+    console.log(`[api/briefing] error=${message}`);
+    return Response.json({ error: message }, { status: 500 });
   }
 }
 
