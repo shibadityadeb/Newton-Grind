@@ -120,15 +120,52 @@ function asObject(value: unknown): Record<string, unknown> {
 }
 
 let primaryCourseHash: string | undefined;
+let primaryCourseHashPromise: Promise<string | undefined> | null = null;
+let studentIdentityPromise: Promise<{ name?: string; user?: string }> | null = null;
 
 async function getPrimaryCourseHash(): Promise<string | undefined> {
   if (primaryCourseHash) return primaryCourseHash;
-  const courses = asObject(await callMCP<Record<string, unknown>>("list_courses"));
-  const resolved = courses.primary_course_hash;
-  if (typeof resolved === "string" && resolved.length > 0) {
-    primaryCourseHash = resolved;
+  if (primaryCourseHashPromise) return primaryCourseHashPromise;
+
+  primaryCourseHashPromise = (async () => {
+    const courses = asObject(await callMCP<Record<string, unknown>>("list_courses"));
+    const resolved = courses.primary_course_hash;
+    if (typeof resolved === "string" && resolved.length > 0) {
+      primaryCourseHash = resolved;
+    }
+    return primaryCourseHash;
+  })();
+
+  try {
+    return await primaryCourseHashPromise;
+  } finally {
+    primaryCourseHashPromise = null;
   }
-  return primaryCourseHash;
+}
+
+async function getStudentIdentity(): Promise<{ name?: string; user?: string }> {
+  if (studentIdentityPromise) return studentIdentityPromise;
+  studentIdentityPromise = (async () => {
+    const me = asObject(await callMCP<Record<string, unknown>>("get_me"));
+    const name =
+      typeof me.name === "string"
+        ? me.name
+        : typeof me.full_name === "string"
+          ? me.full_name
+          : typeof me.user_name === "string"
+            ? me.user_name
+            : undefined;
+    const user =
+      typeof me.username === "string"
+        ? me.username
+        : typeof me.user_name === "string"
+          ? me.user_name
+          : typeof me.email === "string"
+            ? me.email
+            : undefined;
+    return { name, user };
+  })();
+  return studentIdentityPromise;
 }
 
 async function callMCP<T>(method: string, params?: unknown): Promise<T> {
@@ -143,7 +180,7 @@ async function callMCP<T>(method: string, params?: unknown): Promise<T> {
       settled = true;
       proc.kill();
       reject(new Error(`MCP timeout for method ${method}`));
-    }, 6000);
+    }, 20000);
     const initRequest = {
       jsonrpc: "2.0",
       id: 1,
@@ -262,13 +299,19 @@ export function fetchSchedule(): Promise<Schedule> {
 
 export function fetchProgress(): Promise<Progress> {
   return getPrimaryCourseHash().then(async (courseHash) => {
-    const raw = asObject(await callMCP<Record<string, unknown>>("get_course_overview", { course_hash: courseHash }));
+    const [raw, identity] = await Promise.all([
+      callMCP<Record<string, unknown>>("get_course_overview", { course_hash: courseHash }),
+      getStudentIdentity(),
+    ]);
+    const rawObj = asObject(raw);
     const attendance = Number(raw.attendance ?? raw.attendance_percentage ?? raw.attendance_percent ?? 0);
     return {
       attendance: Number.isFinite(attendance) ? attendance : 0,
-      assessmentScores: asObject(raw.assessmentScores) as Record<string, number>,
-      assignmentCompletion: asObject(raw.assignmentCompletion) as Record<string, boolean>,
-      ...raw,
+      assessmentScores: asObject(rawObj.assessmentScores) as Record<string, number>,
+      assignmentCompletion: asObject(rawObj.assignmentCompletion) as Record<string, boolean>,
+      name: identity.name,
+      user: identity.user,
+      ...rawObj,
     };
   });
 }
@@ -311,9 +354,9 @@ export function fetchQOTD(): Promise<QOTD> {
 export function fetchLeaderboard(): Promise<Leaderboard> {
   return getPrimaryCourseHash().then(async (courseHash) => {
     const [overallRaw, weeklyRaw, monthlyRaw] = await Promise.all([
-      callMCP<Record<string, unknown>>("get_leaderboard", { course_hash: courseHash, period: "overall", limit: 20 }),
-      callMCP<Record<string, unknown>>("get_leaderboard", { course_hash: courseHash, period: "weekly", limit: 20 }),
-      callMCP<Record<string, unknown>>("get_leaderboard", { course_hash: courseHash, period: "monthly", limit: 20 }),
+      callMCP<Record<string, unknown>>("get_leaderboard", { course_hash: courseHash, period: "overall", limit: 500 }),
+      callMCP<Record<string, unknown>>("get_leaderboard", { course_hash: courseHash, period: "weekly", limit: 500 }),
+      callMCP<Record<string, unknown>>("get_leaderboard", { course_hash: courseHash, period: "monthly", limit: 500 }),
     ]);
 
     const normalize = (value: Record<string, unknown>) =>

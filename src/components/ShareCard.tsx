@@ -10,6 +10,7 @@ interface ShareCardProps {
 
 export default function ShareCard({ rank, momentum, streak }: ShareCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const rankLabel = rank > 0 ? `#${rank}` : "--";
 
   const handleDownload = async () => {
     if (!cardRef.current) return;
@@ -47,7 +48,7 @@ export default function ShareCard({ rank, momentum, streak }: ShareCardProps) {
         <h3 className="text-lg font-bold mb-2 text-blue-700">Newton Grind Stats</h3>
         <div className="flex justify-around my-4">
           <div>
-            <div className="text-3xl font-bold text-blue-900">#{rank}</div>
+            <div className="text-3xl font-bold text-blue-900">{rankLabel}</div>
             <div className="text-xs text-gray-500">Rank</div>
           </div>
           <div>

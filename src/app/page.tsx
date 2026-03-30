@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { Space_Mono, Syne } from "next/font/google";
 import { useEffect, useState } from "react";
 import {
@@ -13,9 +12,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { motion } from "framer-motion";
+import jsPDF from "jspdf";
 import type { DashboardResponse } from "@/lib/dashboard-types";
-
-const ShareCard = dynamic(() => import("@/components/ShareCard"), { ssr: false });
 
 const spaceMono = Space_Mono({
   subsets: ["latin"],
@@ -71,16 +70,17 @@ function urgencyForDeadline(iso: string): "urgent" | "warn" | "normal" {
   return "normal";
 }
 
-function computeTrajectory(currentRank: number, predictedRank: number) {
-  const start = currentRank + 280;
-  const mid = currentRank + 180;
+function computeXpTrajectory(currentXp: number) {
+  const safeCurrent = Math.max(0, currentXp);
+  const start = Math.max(0, safeCurrent - 1200);
+  const mid = Math.max(0, safeCurrent - 600);
   return [
-    { checkpoint: "W1", rank: start, predicted: start },
-    { checkpoint: "W2", rank: start - 60, predicted: start - 75 },
-    { checkpoint: "W3", rank: start - 120, predicted: start - 145 },
-    { checkpoint: "W4", rank: mid, predicted: mid - 30 },
-    { checkpoint: "W5", rank: currentRank, predicted: Math.max(1, currentRank - 25) },
-    { checkpoint: "W6", rank: null, predicted: Math.max(1, predictedRank) },
+    { checkpoint: "W1", xp: start, projected: start },
+    { checkpoint: "W2", xp: start + 250, projected: start + 300 },
+    { checkpoint: "W3", xp: start + 520, projected: start + 640 },
+    { checkpoint: "W4", xp: mid, projected: mid + 220 },
+    { checkpoint: "W5", xp: safeCurrent, projected: safeCurrent + 340 },
+    { checkpoint: "W6", xp: null, projected: safeCurrent + 760 },
   ];
 }
 
@@ -88,6 +88,7 @@ export default function Home() {
   const [now, setNow] = useState(() => new Date());
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -98,29 +99,7 @@ export default function Home() {
     let mounted = true;
     async function loadData() {
       console.log("[ui] dashboard load start");
-      const [dashboardRes, briefingRes, studyPlanRes, rivalRes, momentumRes] = await Promise.allSettled([
-        fetchJson<DashboardResponse>("/api/dashboard"),
-        fetchJson<DashboardResponse["insights"]["briefing"]>("/api/briefing"),
-        fetchJson<DashboardResponse["insights"]["studyPlan"]>("/api/study-plan"),
-        fetchJson<DashboardResponse["insights"]["rival"]>("/api/rival"),
-        fetchJson<DashboardResponse["insights"]["momentum"]>("/api/momentum"),
-      ]);
-
-      if (dashboardRes.status !== "fulfilled") {
-        throw dashboardRes.reason;
-      }
-
-      const base = dashboardRes.value;
-      const merged: DashboardResponse = {
-        ...base,
-        insights: {
-          briefing: briefingRes.status === "fulfilled" ? briefingRes.value : base.insights.briefing,
-          studyPlan: studyPlanRes.status === "fulfilled" ? studyPlanRes.value : base.insights.studyPlan,
-          rival: rivalRes.status === "fulfilled" ? rivalRes.value : base.insights.rival,
-          endRank: base.insights.endRank,
-          momentum: momentumRes.status === "fulfilled" ? momentumRes.value : base.insights.momentum,
-        },
-      };
+      const merged = await fetchJson<DashboardResponse>("/api/dashboard");
 
       if (!mounted) return;
       setDashboard(merged);
@@ -153,8 +132,27 @@ export default function Home() {
 
   if (!dashboard) {
     return (
-      <div className={`${spaceMono.className} min-h-screen bg-[#0a0e1a] p-8 text-[#d7deed]`}>
-        <h1 className={`${syne.className} text-2xl font-bold text-white`}>Loading War Room...</h1>
+      <div className={`${spaceMono.className} min-h-screen bg-[#0a0e1a] p-8 text-[#d7deed] grid place-items-center`}>
+        <div className="text-center">
+          <div className="mx-auto mb-5 flex gap-3">
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                className="h-3 w-3 rounded-full bg-[#00d4aa]"
+                animate={{ y: [0, -8, 0], opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 1, repeat: Infinity, delay: i * 0.18 }}
+              />
+            ))}
+          </div>
+          <motion.h1
+            className={`${syne.className} text-2xl font-bold text-white`}
+            initial={{ opacity: 0.4 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8, repeat: Infinity, repeatType: "reverse" }}
+          >
+            Syncing Student Command Feed
+          </motion.h1>
+        </div>
       </div>
     );
   }
@@ -164,11 +162,23 @@ export default function Home() {
       ? dashboard.progress.name
       : typeof dashboard.progress.user === "string"
         ? dashboard.progress.user
-        : "Cadet";
-  const rankEntry = dashboard.leaderboard.overall.find((entry) => entry.name === studentName);
-  const rankNumber = rankEntry?.rank ?? dashboard.insights.endRank.predictedRank;
+        : "Student";
   const momentum = dashboard.insights.momentum.score;
   const qotdStreak = dashboard.qotd.streak ?? 0;
+  const progressData = dashboard.progress as Record<string, unknown>;
+  const performance = (progressData.performance as Record<string, unknown> | undefined) ?? {};
+  const xp = (progressData.xp as Record<string, unknown> | undefined) ?? {};
+  const totalXp = typeof xp.total_earned === "number" ? xp.total_earned : 0;
+  const attendance = typeof dashboard.progress.attendance === "number" ? dashboard.progress.attendance : 0;
+  const lecturesAttended =
+    typeof performance.lectures_attended === "number" ? performance.lectures_attended : 0;
+  const totalLectures = typeof performance.total_lectures === "number" ? performance.total_lectures : 0;
+  const courseTitle = typeof progressData.course_title === "string" ? progressData.course_title : "Newton Student";
+  const courseUrl = typeof progressData.url === "string" ? progressData.url : "https://my.newtonschool.co";
+  const qotdUrl =
+    typeof dashboard.qotd.url === "string" ? dashboard.qotd.url : `${courseUrl}?tab=question-of-the-day`;
+  const leaderboardUrl = `${courseUrl}?tab=leaderboard`;
+  const assignmentsUrl = `${courseUrl}?tab=assignments`;
 
   const nextClass = [...dashboard.schedule]
     .map((slot) => ({ ...slot, startDate: new Date(slot.startTime) }))
@@ -179,9 +189,114 @@ export default function Home() {
   const assignments = [...dashboard.assignments].sort(
     (a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime(),
   );
-  const trajectoryData = computeTrajectory(rankNumber, dashboard.insights.endRank.predictedRank);
+  const trajectoryData = computeXpTrajectory(totalXp);
   const momentumRingStyle = {
     background: `conic-gradient(#00d4aa ${Math.min(Math.max(momentum, 0), 100) * 3.6}deg, #1e2b43 0deg)`,
+  };
+  const shareUrl =
+    typeof window === "undefined"
+      ? "/share"
+      : `${window.location.origin}/share?student=${encodeURIComponent(studentName)}&course=${encodeURIComponent(
+          courseTitle,
+        )}&xp=${totalXp}&attendance=${attendance}&streak=${qotdStreak}&momentum=${momentum}`;
+
+  const handleShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1800);
+      if (navigator.share) {
+        await navigator.share({
+          title: `${studentName} • Newton Progress`,
+          text: `${studentName}'s Newton progress snapshot`,
+          url: shareUrl,
+        });
+      }
+    } catch (error) {
+      console.log("[ui] share link failed", error);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+
+    const left = 48;
+    let y = 62;
+    const line = 24;
+
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(0, 0, 595, 842, "F");
+
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setFillColor(255, 255, 255);
+    pdf.roundedRect(34, 34, 527, 774, 12, 12, "FD");
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(20);
+    pdf.text("Newton Grind Progress Report", left, y);
+    y += line;
+
+    pdf.setTextColor(70, 70, 70);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(11);
+    pdf.text(`Generated: ${new Date().toLocaleString()}`, left, y);
+    y += 30;
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(13);
+    pdf.text("Student Details", left, y);
+    y += 20;
+
+    const rows = [
+      `Name: ${studentName}`,
+      `Course: ${courseTitle}`,
+      `Total XP: ${totalXp}`,
+      `Momentum Score: ${momentum}`,
+      `Attendance: ${attendance}%`,
+      `Lectures: ${lecturesAttended}/${totalLectures}`,
+      `QOTD Streak: ${qotdStreak}`,
+    ];
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(12);
+    pdf.setTextColor(0, 0, 0);
+    rows.forEach((row) => {
+      pdf.text(row, left, y);
+      y += 18;
+    });
+    y += 8;
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Today's Mission", left, y);
+    y += 18;
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont("helvetica", "normal");
+    dashboard.insights.briefing.mission.forEach((item, idx) => {
+      const wrapped = pdf.splitTextToSize(`${idx + 1}. ${item}`, 500);
+      pdf.text(wrapped, left, y);
+      y += wrapped.length * 14 + 4;
+    });
+
+    y += 6;
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Top Pending Assignments", left, y);
+    y += 18;
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont("helvetica", "normal");
+    assignments.slice(0, 8).forEach((item) => {
+      const assignmentLine = `- ${item.title} (Due: ${formatDeadline(item.deadline)})`;
+      const wrapped = pdf.splitTextToSize(assignmentLine, 500);
+      pdf.text(wrapped, left, y);
+      y += wrapped.length * 13 + 3;
+    });
+
+    pdf.save(`${studentName.replace(/\s+/g, "-").toLowerCase()}-progress-card.pdf`);
   };
 
   return (
@@ -193,19 +308,36 @@ export default function Home() {
       }}
     >
       <main className="mx-auto w-full max-w-[1400px] px-4 py-5 sm:px-6 lg:px-8">
-        <div className="mb-8 flex flex-col items-center">
-          <ShareCard rank={rankNumber} momentum={momentum} streak={qotdStreak} />
-        </div>
-
-        <section className="mb-5 grid gap-4 rounded-2xl border border-[#1c2a44] bg-[#0d1526]/90 p-4 shadow-[0_0_30px_rgba(0,0,0,0.45)] lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
+        <section className="mb-5 grid gap-4 rounded-2xl border border-[#1c2a44] bg-[#0d1526]/90 p-4 shadow-[0_0_30px_rgba(0,0,0,0.45)] lg:grid-cols-[1.3fr_1fr_1fr_1fr]">
           <div>
             <p className={`${syne.className} text-xl font-extrabold text-white sm:text-2xl`}>{studentName}</p>
-            <p className="mt-1 text-xs tracking-[0.2em] text-[#7f92b8] uppercase">JEE 2027 Alpha</p>
-          </div>
-          <div className="flex items-center lg:justify-center">
-            <span className="rounded-md border border-[#00d4aa]/50 bg-[#00d4aa]/15 px-3 py-1 text-xs font-bold tracking-[0.18em] text-[#00d4aa] uppercase">
-              Rank #{rankNumber}
-            </span>
+            <p className="mt-1 text-xs tracking-[0.1em] text-[#7f92b8] uppercase">{courseTitle}</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              <a href={courseUrl} target="_blank" rel="noreferrer" className="rounded border border-[#2d4369] px-2 py-1 text-[#9cc4ff]">
+                Course
+              </a>
+              <a href={assignmentsUrl} target="_blank" rel="noreferrer" className="rounded border border-[#2d4369] px-2 py-1 text-[#9cc4ff]">
+                Assignments
+              </a>
+              <a href={leaderboardUrl} target="_blank" rel="noreferrer" className="rounded border border-[#2d4369] px-2 py-1 text-[#9cc4ff]">
+                Leaderboard
+              </a>
+              <a href={qotdUrl} target="_blank" rel="noreferrer" className="rounded border border-[#2d4369] px-2 py-1 text-[#9cc4ff]">
+                QOTD
+              </a>
+              <button
+                onClick={handleShareLink}
+                className="rounded border border-[#00d4aa]/50 px-2 py-1 text-[#00d4aa]"
+              >
+                {shareCopied ? "Link Copied" : "Share Link"}
+              </button>
+              <button
+                onClick={handleDownloadPdf}
+                className="rounded border border-[#f59e0b]/60 px-2 py-1 text-[#f59e0b]"
+              >
+                Download PDF
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-3 lg:justify-center">
             <div
@@ -221,10 +353,42 @@ export default function Home() {
               <p className="text-sm font-bold text-white">Score / 100</p>
             </div>
           </div>
+          <div className="rounded-lg border border-[#274067] bg-[#0f1a2e] p-3">
+            <p className="text-xs uppercase tracking-[0.12em] text-[#7f92b8]">Student Stats</p>
+            <p className="mt-2 text-sm text-white">XP: <span className="font-bold text-[#00d4aa]">{totalXp}</span></p>
+            <p className="mt-1 text-sm text-white">Attendance: <span className="font-bold text-[#00d4aa]">{attendance}%</span></p>
+            <p className="mt-1 text-sm text-white">
+              Lectures: <span className="font-bold text-[#00d4aa]">{lecturesAttended}/{totalLectures}</span>
+            </p>
+          </div>
           <div className="flex items-center justify-start lg:justify-end">
             <div>
               <p className="text-xs tracking-[0.2em] text-[#7f92b8] uppercase">Live Clock</p>
               <p className="text-lg font-bold text-[#00d4aa]">{now.toLocaleTimeString()}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-5">
+          <div className="rounded-2xl border border-[#1c2a44] bg-[#0d1526]/90 p-4 shadow-[0_0_24px_rgba(0,0,0,0.35)]">
+            <p className={`${syne.className} text-lg font-bold text-white`}>Progress Snapshot</p>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                <p className="text-xs text-[#7f92b8] uppercase">Student</p>
+                <p className="mt-1 text-sm font-bold text-white">{studentName}</p>
+              </div>
+              <div className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                <p className="text-xs text-[#7f92b8] uppercase">Total XP</p>
+                <p className="mt-1 text-sm font-bold text-[#00d4aa]">{totalXp}</p>
+              </div>
+              <div className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                <p className="text-xs text-[#7f92b8] uppercase">Momentum</p>
+                <p className="mt-1 text-sm font-bold text-[#00d4aa]">{momentum}</p>
+              </div>
+              <div className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
+                <p className="text-xs text-[#7f92b8] uppercase">QOTD Streak</p>
+                <p className="mt-1 text-sm font-bold text-[#f59e0b]">{qotdStreak}</p>
+              </div>
             </div>
           </div>
         </section>
@@ -274,16 +438,15 @@ export default function Home() {
 
           <div className="space-y-4 xl:col-span-1">
             <div className="h-[390px] rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
-              <h2 className={`${syne.className} text-lg font-bold text-white`}>Rank Trajectory</h2>
-              <p className="mt-1 text-xs text-[#7f92b8]">Current rank vs predicted end-rank projection.</p>
+              <h2 className={`${syne.className} text-lg font-bold text-white`}>XP Trajectory</h2>
+              <p className="mt-1 text-xs text-[#7f92b8]">Current XP vs projected momentum gains.</p>
               <div className="mt-3 h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={trajectoryData}>
                     <CartesianGrid stroke="#243757" strokeDasharray="4 4" />
                     <XAxis dataKey="checkpoint" stroke="#8aa0c8" tick={{ fill: "#8aa0c8", fontSize: 12 }} />
                     <YAxis
-                      domain={["dataMin - 30", "dataMax + 30"]}
-                      reversed
+                      domain={["dataMin - 150", "dataMax + 150"]}
                       stroke="#8aa0c8"
                       tick={{ fill: "#8aa0c8", fontSize: 12 }}
                     />
@@ -297,8 +460,8 @@ export default function Home() {
                     <Legend wrapperStyle={{ color: "#d7deed" }} />
                     <Line
                       type="monotone"
-                      dataKey="rank"
-                      name="Current Rank"
+                      dataKey="xp"
+                      name="Current XP"
                       stroke="#00d4aa"
                       strokeWidth={3}
                       dot={{ r: 4, fill: "#00d4aa" }}
@@ -306,8 +469,8 @@ export default function Home() {
                     />
                     <Line
                       type="monotone"
-                      dataKey="predicted"
-                      name="Predicted End Rank"
+                      dataKey="projected"
+                      name="Projected XP"
                       stroke="#f59e0b"
                       strokeWidth={2}
                       strokeDasharray="7 6"
@@ -333,15 +496,17 @@ export default function Home() {
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <div className="h-[420px] rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4 flex flex-col">
               <h3 className={`${syne.className} text-lg font-bold text-white`}>Assignments Due</h3>
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-3 h-full space-y-2 overflow-y-auto pr-1">
                 {assignments.map((item) => {
                   const urgency = urgencyForDeadline(item.deadline);
+                  const assignmentUrl =
+                    typeof item.url === "string" ? item.url : assignmentsUrl;
                   return (
                     <li
                       key={item.id}
-                      className={`rounded-lg border p-3 ${
+                      className={`rounded-lg border p-3 min-h-[96px] shrink-0 flex flex-col justify-between ${
                         urgency === "urgent"
                           ? "urgent-shake border-[#f43f5e]/60 bg-[#f43f5e]/10"
                           : urgency === "warn"
@@ -349,9 +514,16 @@ export default function Home() {
                             : "border-[#2d4369] bg-[#101a30]"
                       }`}
                     >
-                      <p className="text-sm font-bold text-white">{item.title}</p>
+                      <a
+                        href={assignmentUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block text-sm font-bold text-white hover:text-[#00d4aa] leading-5 [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden"
+                      >
+                        {item.title}
+                      </a>
                       <p
-                        className={`mt-1 text-xs ${
+                        className={`mt-2 text-xs ${
                           urgency === "urgent"
                             ? "text-[#f43f5e]"
                             : urgency === "warn"
@@ -367,13 +539,23 @@ export default function Home() {
               </ul>
             </div>
 
-            <div className="rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4">
+            <div className="h-[420px] rounded-2xl border border-[#1c2a44] bg-[#0e1629] p-4 flex flex-col">
               <h3 className={`${syne.className} text-lg font-bold text-white`}>Missed Lectures</h3>
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-3 h-full space-y-2 overflow-y-auto pr-1">
                 {dashboard.missedLectures.map((item) => (
-                  <li key={item.id} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
-                    <p className="text-sm text-white">{item.title}</p>
-                    <a href={`/recordings/${item.id}`} className="mt-1 inline-block text-xs text-[#00d4aa] underline">
+                  <li
+                    key={item.id}
+                    className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3 min-h-[96px] shrink-0 flex flex-col justify-between"
+                  >
+                    <p className="text-sm text-white leading-5 [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden">
+                      {item.title}
+                    </p>
+                    <a
+                      href={typeof item.url === "string" ? item.url : courseUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-block text-xs text-[#00d4aa] underline"
+                    >
                       Watch recording
                     </a>
                   </li>
@@ -385,8 +567,15 @@ export default function Home() {
               <h3 className={`${syne.className} text-lg font-bold text-white`}>Arena Recommendations</h3>
               <ul className="mt-3 space-y-2">
                 {dashboard.arenaRecommendations.slice(0, 3).map((item) => (
-                  <li key={item.id} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3">
-                    <p className="text-sm text-white">{item.title}</p>
+                  <li key={item.id} className="rounded-lg border border-[#2d4369] bg-[#101a30] p-3 min-h-[96px] flex flex-col justify-between">
+                    <a
+                      href={typeof item.url === "string" ? item.url : `${courseUrl}?tab=arena`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-white hover:text-[#00d4aa]"
+                    >
+                      {item.title}
+                    </a>
                     <p className="mt-1 text-xs text-[#7f92b8]">
                       {item.topic} • {item.difficulty}
                     </p>
@@ -475,6 +664,12 @@ export default function Home() {
         }
         .urgent-shake {
           animation: urgentShake 2.4s ease-in-out infinite;
+        }
+        a,
+        button,
+        summary,
+        [role="button"] {
+          cursor: pointer;
         }
       `}</style>
     </div>
