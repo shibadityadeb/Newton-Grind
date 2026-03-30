@@ -2,6 +2,10 @@
 
 import { Space_Mono, Syne } from "next/font/google";
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+
+// Dynamically import ShareCard to avoid SSR issues with html2canvas
+const ShareCard = dynamic(() => import("@/components/ShareCard"), { ssr: false });
 import {
   CartesianGrid,
   Legend,
@@ -150,6 +154,9 @@ export default function Home() {
       }}
     >
       <main className="mx-auto w-full max-w-[1400px] px-4 py-5 sm:px-6 lg:px-8">
+        <div className="mb-8 flex flex-col items-center">
+          <ShareCard rank={7} momentum={84} streak={19} />
+        </div>
         <section className="mb-5 grid gap-4 rounded-2xl border border-[#1c2a44] bg-[#0d1526]/90 p-4 shadow-[0_0_30px_rgba(0,0,0,0.45)] lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
           <div>
             <p className={`${syne.className} text-xl font-extrabold text-white sm:text-2xl`}>{student.name}</p>

@@ -1,0 +1,9 @@
+{
+  "env": {
+    "ANTHROPIC_API_KEY": "",
+    "NEXT_PUBLIC_SITE_URL": "https://your-vercel-url.vercel.app"
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ]
+}
