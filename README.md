@@ -66,12 +66,6 @@ Newton Grind is an AI-powered student dashboard built for Newton School learners
 ## Why I built this
 I wanted to build something that feels more useful than a plain student portal. Newton Grind helps students quickly understand where they stand, what they should do next, and how to stay motivated with AI-generated guidance and visible progress.
 
----
-
-## Recruiter Demo
-- See `/demo` for a full-featured, no-login preview.
-- Try the "Share my stats" button to generate a LinkedIn-ready card.
-- Use the recording in [`assets/recording.mp4`](/Users/shibadityadeb/Desktop/Newton-Grind/assets/recording.mp4) for a quick walkthrough.
 
 ---
 
